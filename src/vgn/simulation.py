@@ -264,15 +264,28 @@ class ClutterRemovalSim(object):
 
 
 class Gripper(object):
-    """Simulated Panda hand."""
+    """Simulated FRIDA gripper (was: simulated Panda hand).
+
+    urdf_path/max_opening_width are exact (from
+    robot_description/.../Gripper/Custom/gripper.xacro). finger_depth and
+    T_body_tcp are reasoned starting values, NOT measured/derived from the
+    mesh -- both also double as general scene-scale parameters elsewhere
+    (place_table() sets table_height = finger_depth; scene cube size is
+    6*finger_depth in reset_sim), not literal mechanical dimensions, so
+    they were kept at Panda's original order of magnitude rather than
+    naively set to this gripper's full 0.1m mesh finger length (which would
+    make the scene cube ~0.6m, likely too large for a tabletop scenario).
+    Validate empirically (render/inspect a generated scene, or watch a
+    pilot run's grasp success rate) before trusting these at scale.
+    """
 
     def __init__(self, world):
         self.world = world
-        self.urdf_path = Path("data/urdfs/panda/hand.urdf")
+        self.urdf_path = Path("data/urdfs/frida/hand.urdf")
 
-        self.max_opening_width = 0.08
+        self.max_opening_width = 0.056
         self.finger_depth = 0.05
-        self.T_body_tcp = Transform(Rotation.identity(), [0.0, 0.0, 0.022])
+        self.T_body_tcp = Transform(Rotation.identity(), [0.0, 0.0, 0.017])
         self.T_tcp_body = self.T_body_tcp.inverse()
 
     def reset(self, T_world_tcp):
@@ -290,20 +303,23 @@ class Gripper(object):
             T_world_body,
         )
         self.update_tcp_constraint(T_world_tcp)
-        # constraint to keep fingers centered
+        # constraint to keep fingers centered -- PyBullet doesn't enforce
+        # the URDF <mimic> tag on "leftfinger", so this gear constraint is
+        # still required, just pointed at this gripper's own link/joint
+        # names instead of Panda's.
         self.world.add_constraint(
             self.body,
-            self.body.links["panda_leftfinger"],
+            self.body.links["left_finger"],
             self.body,
-            self.body.links["panda_rightfinger"],
+            self.body.links["right_finger"],
             pybullet.JOINT_GEAR,
             [1.0, 0.0, 0.0],
             Transform.identity(),
             Transform.identity(),
         ).change(gearRatio=-1, erp=0.1, maxForce=50)
-        self.joint1 = self.body.joints["panda_finger_joint1"]
+        self.joint1 = self.body.joints["rightfinger"]
         self.joint1.set_position(0.5 * self.max_opening_width, kinematics=True)
-        self.joint2 = self.body.joints["panda_finger_joint2"]
+        self.joint2 = self.body.joints["leftfinger"]
         self.joint2.set_position(0.5 * self.max_opening_width, kinematics=True)
 
     def update_tcp_constraint(self, T_world_tcp):
