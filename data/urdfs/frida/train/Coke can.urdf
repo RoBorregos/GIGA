@@ -13,5 +13,8 @@
     <collision>
       <geometry><mesh filename="Coke can_col.obj" scale="1.0 1.0 1.0" /></geometry>
     </collision>
+    <contact>
+      <lateral_friction value="1.0"/>
+    </contact>
   </link>
 </robot>

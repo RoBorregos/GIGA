@@ -8,6 +8,12 @@ from vgn.grasp import Label
 from vgn.perception import *
 from vgn.utils import btsim, workspace_lines
 from vgn.utils.transform import Rotation, Transform
+
+# Scene scale, decoupled from the gripper. 0.45m is the practical ceiling for
+# a 40^3 TSDF: 11.3mm per voxel.
+WORKSPACE_SIZE = 0.45
+# Fraction of the workspace the packed scene drops objects into.
+PACKED_PATCH_FRAC = (0.22, 0.78)
 from vgn.utils.misc import apply_noise, apply_translational_noise
 
 
@@ -34,7 +40,15 @@ class ClutterRemovalSim(object):
         self.rng = np.random.RandomState(seed) if seed else np.random
         self.world = btsim.BtWorld(self.gui, save_dir, save_freq)
         self.gripper = Gripper(self.world)
-        self.size = 6 * self.gripper.finger_depth
+        # Workspace size used to be 6 * finger_depth, which tied the scene
+        # scale to a gripper dimension. With FRIDA's 106mm fingers that gave a
+        # 0.62m cube, far too coarse for a 40^3 TSDF (15mm voxels, a 41mm apple
+        # is under 3 voxels). Size is now its own parameter: 0.45m keeps the
+        # voxel at 11.3mm while giving the 198mm-wide gripper body room to
+        # approach. Measured: at 0.30m, 89% of pregrasp poses were already in
+        # collision (62% palm-vs-table), so 98.7% of attempts were labelled
+        # FAILURE before the fingers ever closed.
+        self.size = WORKSPACE_SIZE
         intrinsic = CameraIntrinsic(640, 480, 540.0, 540.0, 320.0, 240.0)
         self.camera = self.world.add_camera(intrinsic, 0.1, 2.0)
 
@@ -85,8 +99,13 @@ class ClutterRemovalSim(object):
 
     def place_table(self, height):
         urdf = self.urdf_root / "setup" / "plane.urdf"
-        pose = Transform(Rotation.identity(), [0.15, 0.15, height])
-        self.world.load_urdf(urdf, pose, scale=0.6)
+        # Centre and scale with the workspace. These were hardcoded to 0.15 and
+        # 0.6, i.e. to a 0.30m cube, while the cameras and the TSDF recentre on
+        # size/2 -- so enlarging the workspace left the table sitting in a
+        # corner, outside the camera's target. plane.obj is a 1m square, so
+        # scale = size gives a table that exactly covers the workspace.
+        pose = Transform(Rotation.identity(), [0.5 * self.size, 0.5 * self.size, height])
+        self.world.load_urdf(urdf, pose, scale=2.0 * self.size)
 
         # define valid volume for sampling grasps
         lx, ux = 0.02, self.size - 0.02
@@ -122,8 +141,13 @@ class ClutterRemovalSim(object):
         while self.num_objects < object_count and attempts < max_attempts:
             self.save_state()
             urdf = self.rng.choice(self.object_urdfs)
-            x = self.rng.uniform(0.08, 0.22)
-            y = self.rng.uniform(0.08, 0.22)
+            # Was uniform(0.08, 0.22): a 140mm patch, hardcoded to the old
+            # 0.30m cube and narrower than the gripper body is wide (198mm),
+            # so the hand could not fit between any two objects. Now a
+            # proportional band centred on the workspace.
+            lo, hi = PACKED_PATCH_FRAC
+            x = self.rng.uniform(lo * self.size, hi * self.size)
+            y = self.rng.uniform(lo * self.size, hi * self.size)
             z = 1.0
             angle = self.rng.uniform(0.0, 2.0 * np.pi)
             rotation = Rotation.from_rotvec(angle * np.r_[0.0, 0.0, 1.0])
@@ -305,7 +329,16 @@ class Gripper(object):
         # Full aperture at q=0, and how far one finger travels to close it.
         self.max_opening_width = 0.106
         self.finger_travel = 0.056
-        self.finger_depth = 0.05
+        # Was 0.05, inherited from the Panda hand. FRIDA's fingers span
+        # z in [0.014, 0.120] and the TCP sits at z = 0.017, so the fingertip
+        # is 0.103m ahead of the TCP -- finger_depth is exactly that distance
+        # in VGN's convention (sample_grasp_point places the object surface up
+        # to finger_depth ahead of the TCP, i.e. right at the fingertip).
+        # At 0.05 the sampler only ever reached halfway down the fingers.
+        # T_body_tcp was swept before and made things worse at 0.070/0.100;
+        # that sweep moved the right variable in the wrong place -- the TCP is
+        # correct, finger_depth was the Panda leftover.
+        self.finger_depth = 0.103
         self.T_body_tcp = Transform(Rotation.identity(), [0.0, 0.0, 0.017])
         self.T_tcp_body = self.T_body_tcp.inverse()
 

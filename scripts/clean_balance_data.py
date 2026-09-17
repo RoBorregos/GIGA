@@ -20,14 +20,15 @@ def main(args):
     print("Number of positives:", len(positives.index))
     print("Number of negatives:", len(negatives.index))
 
-    # clean
+    # clean -- the bounds used to be the literal 0.02/0.28 of a 0.30m
+    # workspace, which silently dropped every grasp beyond 0.28 once the
+    # workspace grew. Read the real size from the run's own setup.json.
+    size, _, _, _ = read_setup(root)
+    lo, hi = 0.02, size - 0.02
     df = read_df(root)
-    df.drop(df[df["x"] < 0.02].index, inplace=True)
-    df.drop(df[df["y"] < 0.02].index, inplace=True)
-    df.drop(df[df["z"] < 0.02].index, inplace=True)
-    df.drop(df[df["x"] > 0.28].index, inplace=True)
-    df.drop(df[df["y"] > 0.28].index, inplace=True)
-    df.drop(df[df["z"] > 0.28].index, inplace=True)
+    for axis in ("x", "y", "z"):
+        df.drop(df[df[axis] < lo].index, inplace=True)
+        df.drop(df[df[axis] > hi].index, inplace=True)
     # write_df(df, root)
 
     # balance

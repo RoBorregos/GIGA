@@ -84,6 +84,14 @@ URDF_TEMPLATE = """<?xml version="1.0"?>
     <collision>
       <geometry><mesh filename="{collision}" scale="{s} {s} {s}" /></geometry>
     </collision>
+    <!-- PyBullet reads this URDF extension directly (setup/plane.urdf already
+         does). Without it every object falls back to PyBullet's default 0.5,
+         and since Bullet MULTIPLIES the two bodies' coefficients that left an
+         effective mu of 0.25 against the fingers, which is why the grip
+         force had to be pushed to 50N to hold anything. -->
+    <contact>
+      <lateral_friction value="{friction}"/>
+    </contact>
   </link>
 </robot>
 """
@@ -228,6 +236,7 @@ def prepare(src_mesh: Path, out_dir: Path, args) -> dict:
             visual=visual_path.name,
             collision=collision_path.name,
             s=MESH_SCALE,
+            friction=args.friction,
         )
     )
 
@@ -271,6 +280,8 @@ def main() -> int:
                         f"(default: {DEFAULT_MAX_MASS})")
     p.add_argument("--concave-threshold", type=float, default=1.10,
                    help="hull/mesh volume ratio above which VHACD is used (default: 1.10)")
+    p.add_argument("--friction", type=float, default=1.0,
+                   help="lateral_friction written into each object URDF (default: 1.0)")
     p.add_argument("--vhacd-resolution", type=int, default=200000)
     p.add_argument("--no-vhacd", dest="vhacd", action="store_false",
                    help="always use a plain convex hull for collision")

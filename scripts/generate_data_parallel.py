@@ -88,8 +88,8 @@ def main(args, rank):
 
         for _ in range(GRASPS_PER_SCENE):
             # sample and evaluate a grasp point
-            point, normal = sample_grasp_point(pc, finger_depth)
-            grasp, label = evaluate_grasp_point(sim, point, normal)
+            point, normal, depth = sample_grasp_point(pc, finger_depth)
+            grasp, label = evaluate_grasp_point(sim, point, normal, depth)
 
             # store the sample
             write_grasp(args.root, scene_id, grasp, label)
@@ -146,6 +146,15 @@ def render_side_images(sim, n=1, random=False):
 
 
 def sample_grasp_point(point_cloud, finger_depth, eps=0.1):
+    """Pick a surface point, its normal, and how deep to grasp at it.
+
+    This used to return `point + normal * grasp_depth` already applied, which
+    silently tied the TCP offset to the surface normal. That is only correct
+    when the approach IS the anti-normal: for a point on the side of a short
+    object the TCP then stays at the object's side height, and a top-down
+    approach from there drives the 103mm fingers straight through the table.
+    The offset is now applied per approach axis, in evaluate_grasp_point.
+    """
     points = np.asarray(point_cloud.points)
     normals = np.asarray(point_cloud.normals)
     ok = False
@@ -155,43 +164,88 @@ def sample_grasp_point(point_cloud, finger_depth, eps=0.1):
         point, normal = points[idx], normals[idx]
         ok = normal[2] > -0.1  # make sure the normal is poitning upwards
     grasp_depth = np.random.uniform(-eps * finger_depth, (1.0 + eps) * finger_depth)
-    point = point + normal * grasp_depth
-    return point, normal
+    return point, normal, grasp_depth
 
 
-def evaluate_grasp_point(sim, pos, normal, num_rotations=6):
-    # define initial grasp frame on object surface
-    z_axis = -normal
+def approach_axes(normal):
+    """Approach directions to try at a sampled surface point.
+
+    VGN only ever used the surface anti-normal, so a point on the side of a
+    short object was only tested with a horizontal approach. With FRIDA's
+    198mm-wide body that drives the palm into the table (measured: 62% of
+    pregrasp poses collide palm-vs-table), the point is labelled a failure,
+    and the network learns "do not grasp here" rather than "grasp here from
+    above" -- even though the rotation head regresses a full orientation per
+    voxel and could represent exactly that distinction.
+
+    Returned axes point along the approach (into the object).
+    """
+    axes = [-normal / np.linalg.norm(normal)]
+    top = np.r_[0.0, 0.0, -1.0]
+    if np.linalg.norm(np.cross(axes[0], top)) > 1e-3:
+        mid = axes[0] + top
+        n = np.linalg.norm(mid)
+        if n > 1e-6:
+            axes.append(mid / n)
+        axes.append(top)
+    return axes
+
+
+def frame_from_axis(z_axis):
     x_axis = np.r_[1.0, 0.0, 0.0]
     if np.isclose(np.abs(np.dot(x_axis, z_axis)), 1.0, 1e-4):
         x_axis = np.r_[0.0, 1.0, 0.0]
     y_axis = np.cross(z_axis, x_axis)
     x_axis = np.cross(y_axis, z_axis)
-    R = Rotation.from_matrix(np.vstack((x_axis, y_axis, z_axis)).T)
+    return Rotation.from_matrix(np.vstack((x_axis, y_axis, z_axis)).T)
 
-    # try to grasp with different yaw angles
-    yaws = np.linspace(0.0, np.pi, num_rotations)
-    outcomes, widths = [], []
-    for yaw in yaws:
-        ori = R * Rotation.from_euler("z", yaw)
-        sim.restore_state()
-        candidate = Grasp(Transform(ori, pos), width=sim.gripper.max_opening_width)
-        outcome, width = sim.execute_grasp(candidate, remove=False)
-        outcomes.append(outcome)
-        widths.append(width)
 
-    # detect mid-point of widest peak of successful yaw angles
-    # TODO currently this does not properly handle periodicity
-    successes = (np.asarray(outcomes) == Label.SUCCESS).astype(float)
-    if np.sum(successes):
-        peaks, properties = signal.find_peaks(
-            x=np.r_[0, successes, 0], height=1, width=1
-        )
-        idx_of_widest_peak = peaks[np.argmax(properties["widths"])] - 1
-        ori = R * Rotation.from_euler("z", yaws[idx_of_widest_peak])
-        width = widths[idx_of_widest_peak]
+def evaluate_grasp_point(sim, surface_point, normal, grasp_depth, num_rotations=4):
+    """Try several approach directions, each over a yaw sweep.
 
-    return Grasp(Transform(ori, pos), width), int(np.max(outcomes))
+    The label is the best outcome over every (approach, yaw) tried, and the
+    returned Grasp carries the orientation that achieved it -- so the rotation
+    target the network regresses is the approach that actually worked at this
+    point, not whichever one the surface normal happened to dictate.
+    """
+    best_ori = None
+    best_pos = surface_point
+    best_width = sim.gripper.max_opening_width
+    best_outcome = Label.FAILURE
+
+    for z_axis in approach_axes(normal):
+        R = frame_from_axis(z_axis)
+        # Back off from the surface ALONG THIS APPROACH, so the fingers come in
+        # from the direction actually being tested rather than from wherever
+        # the surface normal happened to point.
+        pos = surface_point - z_axis * grasp_depth
+        yaws = np.linspace(0.0, np.pi, num_rotations)
+        outcomes, widths = [], []
+        for yaw in yaws:
+            ori = R * Rotation.from_euler("z", yaw)
+            sim.restore_state()
+            candidate = Grasp(Transform(ori, pos), width=sim.gripper.max_opening_width)
+            outcome, width = sim.execute_grasp(candidate, remove=False)
+            outcomes.append(outcome)
+            widths.append(width)
+        if best_ori is None:
+            best_ori = R * Rotation.from_euler("z", yaws[0])
+            best_pos = pos
+
+        # mid-point of the widest run of successful yaws, as before
+        successes = (np.asarray(outcomes) == Label.SUCCESS).astype(float)
+        if np.sum(successes) and best_outcome != Label.SUCCESS:
+            peaks, properties = signal.find_peaks(
+                x=np.r_[0, successes, 0], height=1, width=1
+            )
+            idx = peaks[np.argmax(properties["widths"])] - 1
+            best_ori = R * Rotation.from_euler("z", yaws[idx])
+            best_pos = pos
+            best_width = widths[idx]
+            best_outcome = Label.SUCCESS
+            break  # an approach that works is enough; keep generation cheap
+
+    return Grasp(Transform(best_ori, best_pos), best_width), int(best_outcome)
 
 
 if __name__ == "__main__":

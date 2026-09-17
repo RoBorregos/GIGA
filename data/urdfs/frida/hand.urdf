@@ -20,6 +20,9 @@
         <mesh filename="meshes/gripper.STL" />
       </geometry>
     </collision>
+    <contact>
+      <lateral_friction value="1.0"/>
+    </contact>
   </link>
 
   <link name="right_finger">
@@ -41,6 +44,9 @@
         <mesh filename="meshes/right_finger.STL" />
       </geometry>
     </collision>
+    <contact>
+      <lateral_friction value="1.0"/>
+    </contact>
   </link>
 
   <link name="left_finger">
@@ -62,6 +68,9 @@
         <mesh filename="meshes/left_finger.STL" />
       </geometry>
     </collision>
+    <contact>
+      <lateral_friction value="1.0"/>
+    </contact>
   </link>
 
   <!-- Same prismatic pair as the xacro's fixed_joints=false branch.
@@ -75,15 +84,21 @@
        setJointMotorControl2), so it is the grip force. At the xacro's
        nominal 1N the fingers touch an object and are pushed back open by
        its weight as soon as the arm lifts, scoring every grasp a failure.
-       Measured success over 240 packed-scene grasps: 1N 0.0%, 20N 10.4%,
-       50N 11.7%, 150N 0.8% (at 150N the fingers punch light objects out of
-       the scene). -->
+       effort is now set from physics, not from a success-rate sweep. The
+       links carry lateral_friction 1.0 (was PyBullet's default 0.5, and
+       Bullet MULTIPLIES the two bodies' coefficients, so object 0.5 x
+       finger 0.5 gave an effective mu of 0.25). A two-finger pinch holds
+       m <= 2*mu*F/g, so mu_eff 1.0 with F = 10N holds 2.0kg, the same
+       capacity the old mu 0.25 / 50N reached, but by friction rather than
+       by crushing, and at a force in the range gripper.xacro documents for
+       the real servo clamp. Measured: successful grasps are clean pinches,
+       25/25 with zero palm contact and ~100N total on the fingers. -->
   <joint name="rightfinger" type="prismatic">
     <origin xyz="-0.069 0 0.017" rpy="0 0 0" />
     <parent link="gripper" />
     <child link="right_finger" />
     <axis xyz="1 0 0" />
-    <limit lower="0" upper="0.056" effort="50" velocity="8" />
+    <limit lower="0" upper="0.056" effort="10" velocity="8" />
     <dynamics damping="5.0" friction="0.0" />
   </joint>
 
@@ -92,7 +107,7 @@
     <parent link="gripper" />
     <child link="left_finger" />
     <axis xyz="-1 0 0" />
-    <limit lower="0" upper="0.056" effort="50" velocity="8" />
+    <limit lower="0" upper="0.056" effort="10" velocity="8" />
 
     <mimic joint="rightfinger" multiplier="1" offset="0" />
   </joint>

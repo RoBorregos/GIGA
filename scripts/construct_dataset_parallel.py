@@ -50,8 +50,10 @@ def process_one_scene(args, f, size, intrinsic):
 
     pc = tsdf.get_cloud()
     # crop surface and borders from point cloud
-    lower = np.array([0.02 , 0.02 , 0.055])
-    upper = np.array([0.28, 0.28, 0.3])
+    # Was the literal [0.02,0.28] box of a 0.30m workspace. Scale with size,
+    # and keep the floor just above the table (which sits at finger_depth).
+    lower = np.array([0.02, 0.02, args.table_height + 0.005])
+    upper = np.array([size - 0.02, size - 0.02, size])
     bounding_box = o3d.geometry.AxisAlignedBoundingBox(lower, upper)
     pc = pc.crop(bounding_box)
     pc = np.asarray(pc.points)
@@ -91,8 +93,11 @@ def main(args):
 
     # load setup information
     size, intrinsic, _, finger_depth = read_setup(args.raw)
-    assert np.isclose(size, 6.0 * finger_depth)
+    # size used to be asserted equal to 6 * finger_depth. Those are now
+    # independent: the workspace is its own parameter and finger_depth is
+    # the gripper's real fingertip offset.
     voxel_size = size / RESOLUTION
+    args.table_height = finger_depth
 
     # create df
     df = read_df(args.raw)
