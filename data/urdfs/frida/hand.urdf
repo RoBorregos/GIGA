@@ -65,13 +65,25 @@
   </link>
 
   <!-- Same prismatic pair as the xacro's fixed_joints=false branch.
-       Limits/axes/origins copied verbatim: 0-0.056m stroke. -->
+       Limits/axes/origins copied verbatim: 0-0.056m stroke. Note q=0 is
+       the OPEN pose (fingers 0.106m apart) and q=0.056 is closed, which is
+       the opposite of the Panda hand vgn/simulation.py was written for.
+       Gripper.move()/read() convert between the two.
+
+       effort is NOT from the xacro: it is the force PyBullet drives the
+       joint with (btsim.Joint.set_position passes it to
+       setJointMotorControl2), so it is the grip force. At the xacro's
+       nominal 1N the fingers touch an object and are pushed back open by
+       its weight as soon as the arm lifts, scoring every grasp a failure.
+       Measured success over 240 packed-scene grasps: 1N 0.0%, 20N 10.4%,
+       50N 11.7%, 150N 0.8% (at 150N the fingers punch light objects out of
+       the scene). -->
   <joint name="rightfinger" type="prismatic">
     <origin xyz="-0.069 0 0.017" rpy="0 0 0" />
     <parent link="gripper" />
     <child link="right_finger" />
     <axis xyz="1 0 0" />
-    <limit lower="0" upper="0.056" effort="1" velocity="8" />
+    <limit lower="0" upper="0.056" effort="50" velocity="8" />
     <dynamics damping="5.0" friction="0.0" />
   </joint>
 
@@ -80,7 +92,7 @@
     <parent link="gripper" />
     <child link="left_finger" />
     <axis xyz="-1 0 0" />
-    <limit lower="0" upper="0.056" effort="1" velocity="8" />
+    <limit lower="0" upper="0.056" effort="50" velocity="8" />
 
     <mimic joint="rightfinger" multiplier="1" offset="0" />
   </joint>

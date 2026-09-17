@@ -266,8 +266,27 @@ class ClutterRemovalSim(object):
 class Gripper(object):
     """Simulated FRIDA gripper (was: simulated Panda hand).
 
-    urdf_path/max_opening_width are exact (from
-    robot_description/.../Gripper/Custom/gripper.xacro). finger_depth and
+    This gripper's joints run the opposite way round to the Panda hand this
+    code was written for, and the two are not interchangeable:
+
+        q = 0.000  ->  fingers 0.1060m apart (fully OPEN)
+        q = 0.028  ->  fingers 0.0500m apart
+        q = 0.056  ->  fingers -0.0060m apart (fully CLOSED)
+
+    (measured in PyBullet from the finger link AABBs.) So opening width is
+    0.106 - 2q, not 2q. The Panda mapping made execute_grasp's
+    `self.gripper.move(0.0)` -- meant to close on the object -- fling this
+    gripper wide open instead, and check_success then asks for
+    `read() > 0.1 * max_opening_width` on a gripper reading zero. Every
+    grasp attempt was therefore labelled a failure: a 960-grasp run came
+    back 0/960 positive, and clean_balance_data.py, which drops
+    len(negatives) - len(positives) rows, then emptied the dataset.
+
+    max_opening_width is likewise the full opening, 0.106m. The 0.056 it
+    used to hold is the per-finger travel from gripper.xacro's joint limit,
+    which is half the stroke, not the aperture.
+
+    finger_depth and
     T_body_tcp are reasoned starting values, NOT measured/derived from the
     mesh -- both also double as general scene-scale parameters elsewhere
     (place_table() sets table_height = finger_depth; scene cube size is
@@ -283,7 +302,9 @@ class Gripper(object):
         self.world = world
         self.urdf_path = Path("data/urdfs/frida/hand.urdf")
 
-        self.max_opening_width = 0.056
+        # Full aperture at q=0, and how far one finger travels to close it.
+        self.max_opening_width = 0.106
+        self.finger_travel = 0.056
         self.finger_depth = 0.05
         self.T_body_tcp = Transform(Rotation.identity(), [0.0, 0.0, 0.017])
         self.T_tcp_body = self.T_body_tcp.inverse()
@@ -317,10 +338,11 @@ class Gripper(object):
             Transform.identity(),
             Transform.identity(),
         ).change(gearRatio=-1, erp=0.1, maxForce=50)
+        # Start fully open, which for this gripper is q = 0.
         self.joint1 = self.body.joints["rightfinger"]
-        self.joint1.set_position(0.5 * self.max_opening_width, kinematics=True)
+        self.joint1.set_position(0.0, kinematics=True)
         self.joint2 = self.body.joints["leftfinger"]
-        self.joint2.set_position(0.5 * self.max_opening_width, kinematics=True)
+        self.joint2.set_position(0.0, kinematics=True)
 
     def update_tcp_constraint(self, T_world_tcp):
         T_world_body = T_world_tcp * self.T_tcp_body
@@ -358,12 +380,25 @@ class Gripper(object):
         else:
             return False
 
+    def _joint_position_for_width(self, width):
+        """Joint angle that holds the fingers `width` apart.
+
+        Each finger covers half the difference between the full aperture and
+        the requested one, clamped to the joint's own travel so a commanded
+        width outside the mechanism's range saturates instead of asking
+        PyBullet for a position the joint limits will silently ignore.
+        """
+        q = 0.5 * (self.max_opening_width - width)
+        return float(np.clip(q, 0.0, self.finger_travel))
+
     def move(self, width):
-        self.joint1.set_position(0.5 * width)
-        self.joint2.set_position(0.5 * width)
+        q = self._joint_position_for_width(width)
+        self.joint1.set_position(q)
+        self.joint2.set_position(q)
         for _ in range(int(0.5 / self.world.dt)):
             self.world.step()
 
     def read(self):
-        width = self.joint1.get_position() + self.joint2.get_position()
-        return width
+        """Current opening width in meters (not the joint positions)."""
+        closed_by = self.joint1.get_position() + self.joint2.get_position()
+        return self.max_opening_width - closed_by

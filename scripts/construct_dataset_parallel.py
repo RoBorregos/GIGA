@@ -1,4 +1,20 @@
+# One thread per worker. numpy, Open3D and scikit-image each start an OpenMP
+# pool sized to the whole machine, so with --num-proc N every worker tries to
+# use all N cores and they spend their time fighting instead of working:
+# measured on a 4-core box, a scene that takes 0.12s in a single process took
+# 2.85s inside a 4-way pool, with the parent showing 27s of CPU against 4m20s
+# of wall clock. Parallelism here comes from the pool, not from the libraries.
+#
+# This has to happen before numpy is imported -- the thread pools are sized at
+# import time -- and it is inherited by spawned workers through os.environ.
+import os
+
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
 import argparse
+import functools
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +29,13 @@ from vgn.utils.misc import apply_noise
 
 RESOLUTION = 40
 
-def process_one_scene(args, f):
+def process_one_scene(args, f, size, intrinsic):
+    """Build one scene's TSDF grid and cropped point cloud.
+
+    size/intrinsic are passed in rather than read from module globals: the
+    pool uses the spawn start method, so a worker gets a fresh interpreter
+    where whatever main() assigned to a global never happened.
+    """
     if f.suffix != ".npz":
         return f.stem
     depth_imgs, extrinsics = read_sensor_data(args.raw, f.stem)
@@ -36,6 +58,16 @@ def process_one_scene(args, f):
     write_point_cloud(args.dataset, f.stem, pc)
     return str(f.stem)
 
+def process_one_scene_star(args, size, intrinsic, f):
+    """Argument order flipped so functools.partial can bind everything but `f`.
+
+    imap_unordered passes one item per call, and a spawned worker has to be
+    able to import the target by name -- a lambda or closure cannot cross
+    the process boundary.
+    """
+    return process_one_scene(args, f, size, intrinsic)
+
+
 def log_result(result):
     g_num_completed_jobs.append(result)
     elapsed_time = time.time() - g_starting_time
@@ -56,8 +88,6 @@ def main(args):
     global g_num_completed_jobs
     global g_num_total_jobs
     global g_starting_time
-    global size
-    global intrinsic
 
     # load setup information
     size, intrinsic, _, finger_depth = read_setup(args.raw)
@@ -86,23 +116,22 @@ def main(args):
         # children: they sit at ~1% CPU forever and never write a file.
         # spawn hands each worker a clean interpreter instead.
         mp.set_start_method("spawn", force=True)
-        pool = mp.Pool(processes=args.num_proc)
 
+        # imap_unordered rather than apply_async with a callback: results are
+        # consumed as they arrive on the calling thread, so a worker's
+        # exception is raised here instead of being dropped, and the run does
+        # not depend on the pool's callback thread staying alive to make
+        # progress. apply_async left this step stalled with idle workers and
+        # results that never resolved.
         print('Total jobs: %d, CPU num: %d' % (g_num_total_jobs, args.num_proc))
-        results = [
-            pool.apply_async(func=process_one_scene, args=(args, f,), callback=log_result)
-            for f in file_list
-        ]
-        pool.close()
-        # apply_async throws a worker's exception away unless the result is
-        # read back. That is what made a crashed run look like a successful
-        # one that happened to produce no data -- surface it instead.
-        for r in results:
-            r.get()
-        pool.join()
+        worker = functools.partial(process_one_scene_star, args, size, intrinsic)
+        with mp.Pool(processes=args.num_proc) as pool:
+            for _ in tqdm(pool.imap_unordered(worker, file_list, chunksize=1),
+                          total=g_num_total_jobs):
+                pass
     else:
         for f in tqdm(file_list, total=len(file_list)):
-            process_one_scene(args, f)
+            process_one_scene(args, f, size, intrinsic)
 
 
 if __name__ == "__main__":

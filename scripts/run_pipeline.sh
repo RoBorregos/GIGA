@@ -71,6 +71,7 @@ PROC_TEST="$DATA_ROOT/processed_test"
 LOGDIR_TRAIN="$DATA_ROOT/runs/$RUN_NAME"
 EVAL_DIR="$DATA_ROOT/eval/$RUN_NAME"
 mkdir -p "$LOG_DIR" "$LOGDIR_TRAIN" "$EVAL_DIR"
+[[ "$FORCE_REDO" -eq 1 ]] && rm -f "$DATA_ROOT"/.done_*
 
 CONFIG_LOG="$LOG_DIR/config.txt"
 {
@@ -81,18 +82,32 @@ CONFIG_LOG="$LOG_DIR/config.txt"
   echo "run_test=$RUN_TEST force=$FORCE_REDO"
 } | tee "$CONFIG_LOG"
 
-# Runs "$@", tees output to $LOG_DIR/<name>.log, skips if $skip_check is true
-# (unless --force), and stops the whole pipeline on failure.
+# Runs "$@", tees output to $LOG_DIR/<name>.log, and stops the pipeline on
+# failure.
+#
+# Resuming is driven by a marker written only after a step exits 0, not by
+# whether its output directory has anything in it. A step that dies partway
+# still leaves that directory populated -- construct_dataset_parallel.py
+# creates scenes/ and point_clouds/ before processing a single scene -- so
+# an "is the output there?" check silently accepts a half-written dataset
+# and every later step builds on it.
 step() {
-  local name="$1" skip_check="$2"; shift 2
+  local name="$1"; shift
   local log="$LOG_DIR/${name}.log"
-  if [[ "$FORCE_REDO" -eq 0 ]] && eval "$skip_check"; then
-    echo "[$name] output already present, skipping (use --force to redo)" | tee "$log"
+  local marker="$DATA_ROOT/.done_${name}"
+  if [[ "$FORCE_REDO" -eq 0 ]] && [[ -f "$marker" ]]; then
+    echo "[$name] completed on an earlier run, skipping (use --force to redo)" | tee "$log"
     return 0
   fi
   echo "[$name] $(date -Iseconds) start: $*" | tee "$log"
   local t0=$SECONDS
-  if "$@" 2>&1 | tee -a "$log"; then
+  # `|| rc=$?` keeps `set -e` from killing the script before the marker
+  # logic runs; `pipefail` (set at the top) is what makes rc the command's
+  # own status rather than tee's, which is always 0.
+  local rc=0
+  "$@" 2>&1 | tee -a "$log" || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    touch "$marker"
     echo "[$name] $(date -Iseconds) done in $((SECONDS - t0))s" | tee -a "$log"
   else
     echo "[$name] $(date -Iseconds) FAILED after $((SECONDS - t0))s -- see $log" | tee -a "$log"
@@ -112,46 +127,48 @@ for pair in "TRAIN:$NUM_GRASPS_TRAIN" "TEST:$NUM_GRASPS_TEST"; do
   fi
 done
 
-has_scenes() { [[ -d "$1/scenes" ]] && [[ -n "$(ls -A "$1/scenes" 2>/dev/null)" ]]; }
-has_files()  { [[ -d "$1" ]] && [[ -n "$(ls -A "$1" 2>/dev/null)" ]]; }
-
-step "01_generate_train" "has_scenes '$RAW_TRAIN'" \
+step "01_generate_train" \
   python3 scripts/generate_data_parallel.py "$RAW_TRAIN" \
     --scene packed --object-set frida/train \
     --num-grasps "$NUM_GRASPS_TRAIN" --num-proc "$NUM_PROC" --save-scene
 
-step "02_generate_test" "has_scenes '$RAW_TEST'" \
+step "02_generate_test" \
   python3 scripts/generate_data_parallel.py "$RAW_TEST" \
     --scene packed --object-set frida/test \
     --num-grasps "$NUM_GRASPS_TEST" --num-proc "$NUM_PROC" --save-scene
 
-step "03_clean_balance_train" "false" \
+step "03_clean_balance_train" \
   python3 scripts/clean_balance_data.py "$RAW_TRAIN"
 
-step "03_clean_balance_test" "false" \
+step "03_clean_balance_test" \
   python3 scripts/clean_balance_data.py "$RAW_TEST"
 
-step "04_construct_train" "has_files '$PROC_TRAIN'" \
+step "04_construct_train" \
   python3 scripts/construct_dataset_parallel.py --num-proc "$NUM_PROC" --single-view --add-noise dex \
     "$RAW_TRAIN" "$PROC_TRAIN"
 
-step "04_construct_test" "has_files '$PROC_TEST'" \
+step "04_construct_test" \
   python3 scripts/construct_dataset_parallel.py --num-proc "$NUM_PROC" --single-view --add-noise dex \
     "$RAW_TEST" "$PROC_TEST"
 
-step "05_occ_train" "false" \
+step "05_occ_train" \
   python3 scripts/save_occ_data_parallel.py "$RAW_TRAIN" 100000 4 --num-proc "$NUM_PROC"
 
-step "05_occ_test" "false" \
+step "05_occ_test" \
   python3 scripts/save_occ_data_parallel.py "$RAW_TEST" 100000 4 --num-proc "$NUM_PROC"
 
-step "06_train" "false" \
+step "06_train" \
   python3 scripts/train_giga.py --net giga \
     --dataset "$PROC_TRAIN" --dataset_raw "$RAW_TRAIN" \
     --logdir "$LOGDIR_TRAIN" \
     --epochs "$EPOCHS" --batch-size "$BATCH_SIZE" --lr "$LR" --val-split "$VAL_SPLIT"
 
-BEST_CKPT="$(ls -t "$LOGDIR_TRAIN"/best_vgn_*.pt 2>/dev/null | head -1 || true)"
+# train_giga.py does not write into --logdir directly: it creates a
+# timestamped, hyperparameter-named subdirectory under it and saves there, so
+# a plain "$LOGDIR_TRAIN"/best_vgn_*.pt glob never matches and the pipeline
+# reported an empty checkpoint after a training run that had worked.
+BEST_CKPT="$(find "$LOGDIR_TRAIN" -name 'best_vgn_*.pt' -printf '%T@ %p\n' 2>/dev/null \
+  | sort -rn | head -1 | cut -d' ' -f2- || true)"
 echo "best_checkpoint=$BEST_CKPT" | tee -a "$CONFIG_LOG"
 
 if [[ "$RUN_TEST" -eq 1 ]]; then
@@ -159,7 +176,7 @@ if [[ "$RUN_TEST" -eq 1 ]]; then
     echo "no checkpoint found under $LOGDIR_TRAIN, cannot run test eval" | tee "$LOG_DIR/07_test_eval.log"
     exit 1
   fi
-  step "07_test_eval" "false" \
+  step "07_test_eval" \
     python3 scripts/sim_grasp_multiple.py \
       --model "$BEST_CKPT" --type giga --scene packed --object-set frida/test \
       --num-view 1 --num-rounds 100 --sideview --add-noise dex \
@@ -179,6 +196,14 @@ fi
 # so everything it just wrote into the bind-mounted data root is root-owned
 # and the host user cannot delete their own datasets. Hand it back to
 # whoever owns the mount point.
+if [[ "$(id -u)" -eq 0 ]]; then
+  owner="$(stat -c '%u:%g' "$DATA_ROOT")"
+  [[ "$owner" != "0:0" ]] && chown -R "$owner" "$DATA_ROOT" || true
+fi
+
+# The container runs as root (setup_giga.sh needs to write to dist-packages),
+# so everything just written into the bind-mounted data root is root-owned and
+# the host user cannot delete their own datasets. Hand it back.
 if [[ "$(id -u)" -eq 0 ]]; then
   owner="$(stat -c '%u:%g' "$DATA_ROOT")"
   [[ "$owner" != "0:0" ]] && chown -R "$owner" "$DATA_ROOT" || true

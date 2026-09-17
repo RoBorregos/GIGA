@@ -1,3 +1,18 @@
+# One thread per worker. numpy, Open3D and scikit-image each start an OpenMP
+# pool sized to the whole machine, so with --num-proc N every worker tries to
+# use all N cores and they spend their time fighting instead of working:
+# measured on a 4-core box, a scene that takes 0.12s in a single process took
+# 2.85s inside a 4-way pool, with the parent showing 27s of CPU against 4m20s
+# of wall clock. Parallelism here comes from the pool, not from the libraries.
+#
+# This has to happen before numpy is imported -- the thread pools are sized at
+# import time -- and it is inherited by spawned workers through os.environ.
+import os
+
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
 import os
 import glob
 import time

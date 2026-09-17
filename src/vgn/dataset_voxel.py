@@ -26,7 +26,7 @@ class DatasetVoxel(torch.utils.data.Dataset):
         ori = Rotation.from_quat(self.df.loc[i, "qx":"qw"].to_numpy(np.single))
         pos = self.df.loc[i, "x":"z"].to_numpy(np.single)
         width = self.df.loc[i, "width"].astype(np.single)
-        label = self.df.loc[i, "label"].astype(np.long)
+        label = self.df.loc[i, "label"].astype(np.int64)
         voxel_grid = read_voxel_grid(self.root, scene_id)
         
         if self.augment:
@@ -71,7 +71,7 @@ class DatasetVoxelOccFile(torch.utils.data.Dataset):
         ori = Rotation.from_quat(self.df.loc[i, "qx":"qw"].to_numpy(np.single))
         pos = self.df.loc[i, "x":"z"].to_numpy(np.single)
         width = self.df.loc[i, "width"].astype(np.single)
-        label = self.df.loc[i, "label"].astype(np.long)
+        label = self.df.loc[i, "label"].astype(np.int64)
         voxel_grid = read_voxel_grid(self.root, scene_id)
         
         if self.augment:
