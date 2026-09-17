@@ -193,10 +193,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.save_scene = True
     if args.num_proc > 1:
+        # PyBullet and Open3D both spin up OpenMP thread pools at import
+        # time, and forking a process that already holds them deadlocks the
+        # children: they sit at ~1% CPU forever and never write a file.
+        # spawn hands each worker a clean interpreter instead.
+        mp.set_start_method("spawn", force=True)
         pool = mp.Pool(processes=args.num_proc)
-        for i in range(args.num_proc):
+        results = [
             pool.apply_async(func=main, args=(args, i))
+            for i in range(args.num_proc)
+        ]
         pool.close()
+        # apply_async throws a worker's exception away unless the result is
+        # read back. That is what made a crashed run look like a successful
+        # one that happened to produce no data -- surface it instead.
+        for r in results:
+            r.get()
         pool.join()
     else:
         main(args, 0)

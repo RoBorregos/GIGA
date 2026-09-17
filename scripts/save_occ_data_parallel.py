@@ -47,11 +47,23 @@ def main(args):
     g_starting_time = time.time()
 
     if args.num_proc > 1:
-        pool = mp.Pool(processes=args.num_proc) 
+        # PyBullet and Open3D both spin up OpenMP thread pools at import
+        # time, and forking a process that already holds them deadlocks the
+        # children: they sit at ~1% CPU forever and never write a file.
+        # spawn hands each worker a clean interpreter instead.
+        mp.set_start_method("spawn", force=True)
+        pool = mp.Pool(processes=args.num_proc)
         print('Total jobs: %d, CPU num: %d' % (g_num_total_jobs, args.num_proc))
-        for f in mesh_list_files:
-            pool.apply_async(func=save_occ, args=(f,args), callback=log_result)
+        results = [
+            pool.apply_async(func=save_occ, args=(f, args), callback=log_result)
+            for f in mesh_list_files
+        ]
         pool.close()
+        # apply_async throws a worker's exception away unless the result is
+        # read back. That is what made a crashed run look like a successful
+        # one that happened to produce no data -- surface it instead.
+        for r in results:
+            r.get()
         pool.join()
     else:
         for f in mesh_list_files:

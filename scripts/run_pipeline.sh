@@ -175,5 +175,14 @@ To run the held-out grasp-trial evaluation later:
 EOF
 fi
 
+# The container runs as root (setup_giga.sh needs to write to dist-packages),
+# so everything it just wrote into the bind-mounted data root is root-owned
+# and the host user cannot delete their own datasets. Hand it back to
+# whoever owns the mount point.
+if [[ "$(id -u)" -eq 0 ]]; then
+  owner="$(stat -c '%u:%g' "$DATA_ROOT")"
+  [[ "$owner" != "0:0" ]] && chown -R "$owner" "$DATA_ROOT" || true
+fi
+
 echo "finished=$(date -Iseconds)" | tee -a "$CONFIG_LOG"
 echo "All logs saved under $LOG_DIR"
