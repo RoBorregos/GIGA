@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="Bottle">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.000002 -0.007673 0.000006" rpy="0 0 0" />
+      <mass value="0.022936" />
+      <inertia ixx="0.00009498" ixy="0.00000004" ixz="-0.00000006"
+               iyy="0.00001489" iyz="0.00000003" izz="0.00009472" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="Bottle.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="Bottle_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

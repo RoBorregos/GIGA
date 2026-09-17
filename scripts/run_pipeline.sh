@@ -14,6 +14,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GIGA_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$GIGA_ROOT"
 
+# setup_giga.sh (installs vgn + builds ConvONets extensions) normally only
+# runs via .bashrc on an interactive shell -- if this script is invoked any
+# other way (non-interactive docker exec, cron, etc.) that never happens,
+# so make sure it's run here regardless of how we were launched.
+if [[ -f /root/setup_giga.sh ]] && ! python3 -c "import vgn" >/dev/null 2>&1; then
+  echo "vgn not importable yet -- running setup_giga.sh first"
+  . /root/setup_giga.sh
+fi
+
 DATA_ROOT="${GIGA_DATA_ROOT:-/workspace/giga_data}"
 RUN_NAME="${RUN_NAME:-$(date +%Y%m%d_%H%M%S)}"
 NUM_PROC="${NUM_PROC:-$(nproc)}"
@@ -90,6 +99,18 @@ step() {
     exit 1
   fi
 }
+
+# generate_data_parallel.py loops `range(num_grasps // num_proc // 120)`, so
+# anything under 120 grasps per worker silently produces zero scenes and the
+# whole pipeline then "succeeds" on an empty dataset.
+for pair in "TRAIN:$NUM_GRASPS_TRAIN" "TEST:$NUM_GRASPS_TEST"; do
+  split="${pair%%:*}"; n="${pair##*:}"
+  if (( n / NUM_PROC < 120 )); then
+    echo "NUM_GRASPS_$split=$n with NUM_PROC=$NUM_PROC gives $((n / NUM_PROC)) grasps/worker," >&2
+    echo "under the 120 grasps-per-scene floor -- that generates 0 scenes. Raise it to at least $((120 * NUM_PROC))." >&2
+    exit 1
+  fi
+done
 
 has_scenes() { [[ -d "$1/scenes" ]] && [[ -n "$(ls -A "$1/scenes" 2>/dev/null)" ]]; }
 has_files()  { [[ -d "$1" ]] && [[ -n "$(ls -A "$1" 2>/dev/null)" ]]; }

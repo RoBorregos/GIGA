@@ -30,7 +30,7 @@ def main(args, rank):
     pbar = tqdm(total=grasps_per_worker, disable=rank != 0)
 
     if rank == 0:
-        (args.root / "scenes").mkdir(parents=True)
+        (args.root / "scenes").mkdir(parents=True, exist_ok=True)
         write_setup(
             args.root,
             sim.size,
@@ -39,7 +39,7 @@ def main(args, rank):
             sim.gripper.finger_depth,
         )
         if args.save_scene:
-            (args.root / "mesh_pose_list").mkdir(parents=True)
+            (args.root / "mesh_pose_list").mkdir(parents=True, exist_ok=True)
 
     for _ in range(grasps_per_worker // GRASPS_PER_SCENE):
         # generate heap

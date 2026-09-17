@@ -92,7 +92,14 @@ def write_voxel_grid(root, scene_id, voxel_grid):
 
 def write_point_cloud(root, scene_id, point_cloud, name="point_clouds"):
     path = root / name / (scene_id + ".npz")
-    np.savez_compressed(path, pc=point_cloud)
+    try:
+        data = np.asarray(point_cloud)
+    except ValueError:
+        # mesh_pose_list rows are (mesh_path, scale, 4x4 pose) -- ragged, which
+        # numpy < 1.24 coerced to an object array on its own but newer numpy
+        # rejects. Readers of this file already pass allow_pickle=True.
+        data = np.array(point_cloud, dtype=object)
+    np.savez_compressed(path, pc=data)
 
 def read_voxel_grid(root, scene_id):
     path = root / "scenes" / (scene_id + ".npz")

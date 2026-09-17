@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="Mug">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.009561 -0.000000 0.040553" rpy="0 0 0" />
+      <mass value="0.106239" />
+      <inertia ixx="0.00016400" ixy="-0.00000000" ixz="-0.00000909"
+               iyy="0.00022153" iyz="-0.00000000" izz="0.00018388" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="Mug.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="Mug_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

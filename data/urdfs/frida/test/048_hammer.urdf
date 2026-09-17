@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="048_hammer">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.013420 -0.004151 0.012835" rpy="0 0 0" />
+      <mass value="0.398863" />
+      <inertia ixx="0.00395333" ixy="-0.00042546" ixz="-0.00000107"
+               iyy="0.00014377" iyz="-0.00000401" izz="0.00402494" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="048_hammer.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="048_hammer_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="031_spoon">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.003414 -0.005793 0.083319" rpy="0 0 0" />
+      <mass value="0.038567" />
+      <inertia ixx="0.00015010" ixy="-0.00000089" ixz="0.00000758"
+               iyy="0.00014830" iyz="0.00001676" izz="0.00000456" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="031_spoon.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="031_spoon_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

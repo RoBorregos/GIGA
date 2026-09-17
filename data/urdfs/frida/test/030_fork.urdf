@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="030_fork">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.001183 0.002163 0.039662" rpy="0 0 0" />
+      <mass value="0.018993" />
+      <inertia ixx="0.00000904" ixy="-0.00000002" ixz="0.00000031"
+               iyy="0.00000894" iyz="0.00000019" izz="0.00000078" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="030_fork.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="030_fork_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

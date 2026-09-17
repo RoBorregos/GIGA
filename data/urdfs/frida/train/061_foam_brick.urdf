@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="061_foam_brick">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.010364 -0.005790 0.024580" rpy="0 0 0" />
+      <mass value="0.214270" />
+      <inertia ixx="0.00014484" ixy="-0.00001933" ixz="0.00000144"
+               iyy="0.00010358" iyz="0.00000189" izz="0.00015016" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="061_foam_brick.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="061_foam_brick_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

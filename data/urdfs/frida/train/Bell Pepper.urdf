@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="Bell Pepper">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.000000 -0.000000 0.011875" rpy="0 0 0" />
+      <mass value="0.377438" />
+      <inertia ixx="0.00035261" ixy="-0.00000000" ixz="0.00000000"
+               iyy="0.00035261" iyz="-0.00000000" izz="0.00026075" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="Bell Pepper.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="Bell Pepper_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

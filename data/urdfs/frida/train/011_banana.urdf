@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="011_banana">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.008823 -0.001157 0.016870" rpy="0 0 0" />
+      <mass value="0.230992" />
+      <inertia ixx="0.00017108" ixy="-0.00019525" ixz="0.00000203"
+               iyy="0.00041729" iyz="-0.00000010" izz="0.00053686" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="011_banana.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="011_banana_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="013_apple">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.007254 0.003573 0.039567" rpy="0 0 0" />
+      <mass value="0.271354" />
+      <inertia ixx="0.00017381" ixy="-0.00000042" ixz="0.00000266"
+               iyy="0.00017218" iyz="0.00000004" izz="0.00018335" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="013_apple.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="013_apple_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

@@ -108,7 +108,13 @@ venv.bak/
 .vscode
 
 # data
-/data
+# `/data` (not `/data/*`) makes git skip the directory entirely, which
+# silently breaks any `!` re-include rule for paths inside it -- so this
+# excludes contents one level at a time instead, to keep /data/urdfs
+# (the prepared object sets and the gripper meshes) un-ignored. Generated
+# datasets, logs and downloaded checkpoints under data/ stay ignored.
+/data/*
+!/data/urdfs
 *.swp
 
 # custom

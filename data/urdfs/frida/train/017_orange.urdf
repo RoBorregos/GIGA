@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="017_orange">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.005710 0.007077 0.038071" rpy="0 0 0" />
+      <mass value="0.220696" />
+      <inertia ixx="0.00011983" ixy="-0.00000041" ixz="0.00000048"
+               iyy="0.00012250" iyz="-0.00000086" izz="0.00013275" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="017_orange.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="017_orange_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

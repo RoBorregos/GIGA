@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="055_baseball">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.003057 -0.004464 0.040563" rpy="0 0 0" />
+      <mass value="0.230680" />
+      <inertia ixx="0.00013065" ixy="-0.00000063" ixz="0.00000013"
+               iyy="0.00012881" iyz="0.00000002" izz="0.00014426" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="055_baseball.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="055_baseball_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

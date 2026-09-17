@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="Pringles Can">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 0.108707" rpy="0 0 0" />
+      <mass value="0.144627" />
+      <inertia ixx="0.00082475" ixy="0.00000000" ixz="-0.00000000"
+               iyy="0.00082475" iyz="-0.00000000" izz="0.00018295" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="Pringles Can.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="Pringles Can_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

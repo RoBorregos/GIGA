@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="005_tomato_soup_can">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.003002 0.006240 0.049910" rpy="0 0 0" />
+      <mass value="0.351595" />
+      <inertia ixx="0.00036102" ixy="0.00000091" ixz="0.00000308"
+               iyy="0.00036053" iyz="0.00000164" izz="0.00020613" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="005_tomato_soup_can.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="005_tomato_soup_can_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

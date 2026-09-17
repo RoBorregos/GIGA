@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="029_plate">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.026887 0.000547 0.104063" rpy="0 0 0" />
+      <mass value="2.000000" />
+      <inertia ixx="0.01933448" ixy="0.00037132" ixz="0.00008083"
+               iyy="0.01928768" iyz="-0.00006978" izz="0.02975781" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="029_plate.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="029_plate_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

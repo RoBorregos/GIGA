@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="Sponge">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 0.045000" rpy="0 0 0" />
+      <mass value="0.162000" />
+      <inertia ixx="0.00012150" ixy="-0.00000000" ixz="-0.00000000"
+               iyy="0.00015795" iyz="0.00000000" izz="0.00006075" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="Sponge.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="Sponge_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>

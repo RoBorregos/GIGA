@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="036_wood_block">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.021452 0.014108 0.106364" rpy="0 0 0" />
+      <mass value="1.560796" />
+      <inertia ixx="0.00610359" ixy="-0.00000807" ixz="0.00010727"
+               iyy="0.00607470" iyz="0.00001981" izz="0.00200955" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="036_wood_block.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="036_wood_block_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+  </link>
+</robot>
