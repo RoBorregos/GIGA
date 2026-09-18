@@ -8,6 +8,13 @@ from vgn.perception import *
 from vgn.utils.transform import Rotation, Transform
 from vgn.utils.implicit import get_scene_from_mesh_pose_list
 
+def yaw_mask(df, i):
+    """(yaw_step_deg, yaw_ok) of row i, or (0, 0) for data written before them."""
+    if "yaw_ok" not in df.columns:
+        return 0.0, 0
+    return float(df.at[i, "yaw_step_deg"]), float(df.at[i, "yaw_ok"])
+
+
 class DatasetVoxel(torch.utils.data.Dataset):
     def __init__(self, root, raw_root, num_point=2048, augment=False):
         self.root = root
@@ -35,10 +42,7 @@ class DatasetVoxel(torch.utils.data.Dataset):
         pos = pos / self.size - 0.5
         width = width / self.size
 
-        rotations = np.empty((2, 4), dtype=np.single)
-        R = Rotation.from_rotvec(np.pi * np.r_[0.0, 0.0, 1.0])
-        rotations[0] = ori.as_quat()
-        rotations[1] = (ori * R).as_quat()
+        rotations = valid_rotations(ori.as_quat(), *yaw_mask(self.df, i))
 
         x, y = voxel_grid[0], (label, rotations, width)
 
@@ -80,10 +84,7 @@ class DatasetVoxelOccFile(torch.utils.data.Dataset):
         pos = pos / self.size - 0.5
         width = width / self.size
 
-        rotations = np.empty((2, 4), dtype=np.single)
-        R = Rotation.from_rotvec(np.pi * np.r_[0.0, 0.0, 1.0])
-        rotations[0] = ori.as_quat()
-        rotations[1] = (ori * R).as_quat()
+        rotations = valid_rotations(ori.as_quat(), *yaw_mask(self.df, i))
 
         x, y = voxel_grid[0], (label, rotations, width)
 

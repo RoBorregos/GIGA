@@ -30,6 +30,15 @@ def as_mesh(scene_or_mesh):
         mesh = scene_or_mesh
     return mesh
 
+def com_to_link(p, uid, T_world_com):
+    """Link-frame pose from the COM pose PyBullet reports for the base."""
+    local_pos, local_orn = p.getDynamicsInfo(uid, -1)[3:5]
+    T_link_com = np.eye(4)
+    T_link_com[:3, :3] = np.asarray(p.getMatrixFromQuaternion(local_orn)).reshape(3, 3)
+    T_link_com[:3, 3] = local_pos
+    return T_world_com @ np.linalg.inv(T_link_com)
+
+
 def get_mesh_pose_list_from_world(world, object_set, exclude_plane=True):
     mesh_pose_list = []
     # collect object mesh paths and poses
@@ -39,7 +48,12 @@ def get_mesh_pose_list_from_world(world, object_set, exclude_plane=True):
         if name == 'plane' and exclude_plane:
             continue
         body = world.bodies[uid]
-        pose = body.get_pose().as_matrix()
+        # getBasePositionAndOrientation is the pose of the inertial frame
+        # (centre of mass), but the meshes are in the URDF link frame. With
+        # the FRIDA assets the COM sits up to ~10cm from the link origin, so
+        # storing it directly put every mesh -- and the occupancy labels
+        # built from them -- off by that much. Store the link frame.
+        pose = com_to_link(world.p, uid, body.get_pose().as_matrix())
         scale = body.scale
         visuals = world.p.getVisualShapeData(uid)
         assert len(visuals) == 1

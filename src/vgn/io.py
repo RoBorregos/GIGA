@@ -53,18 +53,45 @@ def read_full_sensor_data(root, scene_id):
     return data["depth_imgs"], data["extrinsics"]
 
 
-def write_grasp(root, scene_id, grasp, label):
+def write_grasp(root, scene_id, grasp, label, yaw_step_deg=0.0, yaw_ok=0):
     # TODO concurrent writes could be an issue
     csv_path = root / "grasps.csv"
     if not csv_path.exists():
         create_csv(
             csv_path,
-            ["scene_id", "qx", "qy", "qz", "qw", "x", "y", "z", "width", "label"],
+            ["scene_id", "qx", "qy", "qz", "qw", "x", "y", "z", "width", "label",
+             "yaw_step_deg", "yaw_ok"],
         )
     qx, qy, qz, qw = grasp.pose.rotation.as_quat()
     x, y, z = grasp.pose.translation
     width = grasp.width
-    append_csv(csv_path, scene_id, qx, qy, qz, qw, x, y, z, width, label)
+    append_csv(csv_path, scene_id, qx, qy, qz, qw, x, y, z, width, label, yaw_step_deg, yaw_ok)
+
+
+MAX_VALID_ROTATIONS = 48  # 2 (gripper symmetry) x up to 24 yaws
+
+
+def valid_rotations(quat, yaw_step_deg=0.0, yaw_ok=0):
+    """Every orientation counted as correct for one grasp row, as quaternions.
+
+    The stored orientation and its 180-degree flip about the approach axis
+    (the gripper is symmetric), plus, when the row carries yaw_ok, every other
+    yaw that also succeeded. Padded to MAX_VALID_ROTATIONS by repeating the
+    first entry, so batches have a fixed shape and a min over the set is
+    unchanged. Rows without yaw_ok (older data) get just the pair.
+    """
+    ori = Rotation.from_quat(quat)
+    flip = Rotation.from_rotvec(np.pi * np.r_[0.0, 0.0, 1.0])
+    has_mask = np.isfinite(yaw_step_deg) and yaw_step_deg > 0 and np.isfinite(yaw_ok)
+    mask = (int(yaw_ok) if has_mask else 0) or 1  # bit 0 = the stored yaw
+    rots = []
+    for j in range(MAX_VALID_ROTATIONS // 2):
+        if mask >> j & 1:
+            r = ori * Rotation.from_euler("z", np.radians(j * yaw_step_deg))
+            rots += [r.as_quat(), (r * flip).as_quat()]
+    out = np.repeat(np.asarray(rots[:1], dtype=np.single), MAX_VALID_ROTATIONS, axis=0)
+    out[:len(rots)] = rots[:MAX_VALID_ROTATIONS]
+    return out
 
 
 def read_grasp(df, i):

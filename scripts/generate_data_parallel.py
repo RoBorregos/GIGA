@@ -89,10 +89,12 @@ def main(args, rank):
         for _ in range(GRASPS_PER_SCENE):
             # sample and evaluate a grasp point
             point, normal, depth = sample_grasp_point(pc, finger_depth)
-            grasp, label = evaluate_grasp_point(sim, point, normal, depth)
+            grasp, label, yaw_ok = evaluate_grasp_point(sim, point, normal, depth,
+                                                        num_rotations=args.num_rotations)
 
             # store the sample
-            write_grasp(args.root, scene_id, grasp, label)
+            write_grasp(args.root, scene_id, grasp, label,
+                        yaw_step_deg=180.0 / args.num_rotations, yaw_ok=yaw_ok)
             pbar.update()
 
     pbar.close()
@@ -200,14 +202,21 @@ def frame_from_axis(z_axis):
     return Rotation.from_matrix(np.vstack((x_axis, y_axis, z_axis)).T)
 
 
-def evaluate_grasp_point(sim, surface_point, normal, grasp_depth, num_rotations=4):
+def evaluate_grasp_point(sim, surface_point, normal, grasp_depth, num_rotations=12):
     """Try several approach directions, each over a yaw sweep.
 
     The label is the best outcome over every (approach, yaw) tried, and the
     returned Grasp carries the orientation that achieved it -- so the rotation
     target the network regresses is the approach that actually worked at this
     point, not whichever one the surface normal happened to dictate.
+
+    Also returns yaw_ok, a bitmask of every yaw that worked on that approach,
+    relative to the stored one: bit j set means orientation * Rz(j * step)
+    also succeeded (step = pi / num_rotations). Several yaws often work; the
+    loss and the evaluation treat all of them as correct instead of only the
+    one written to qx..qw. 0 for failures.
     """
+    yaw_ok = 0
     best_ori = None
     best_pos = surface_point
     best_width = sim.gripper.max_opening_width
@@ -219,7 +228,9 @@ def evaluate_grasp_point(sim, surface_point, normal, grasp_depth, num_rotations=
         # from the direction actually being tested rather than from wherever
         # the surface normal happened to point.
         pos = surface_point - z_axis * grasp_depth
-        yaws = np.linspace(0.0, np.pi, num_rotations)
+        # The gripper is symmetric, so yaw 0 and yaw pi are the same grasp:
+        # leave pi out or one of the tries is wasted on a repeat.
+        yaws = np.linspace(0.0, np.pi, num_rotations, endpoint=False)
         outcomes, widths = [], []
         for yaw in yaws:
             ori = R * Rotation.from_euler("z", yaw)
@@ -232,20 +243,26 @@ def evaluate_grasp_point(sim, surface_point, normal, grasp_depth, num_rotations=
             best_ori = R * Rotation.from_euler("z", yaws[0])
             best_pos = pos
 
-        # mid-point of the widest run of successful yaws, as before
+        # mid-point of the widest run of successful yaws. Yaw wraps around
+        # (the last one sits next to yaw 0), so start the array at a failure
+        # so no run is split across the ends.
         successes = (np.asarray(outcomes) == Label.SUCCESS).astype(float)
         if np.sum(successes) and best_outcome != Label.SUCCESS:
+            shift = int(np.argmin(successes))
             peaks, properties = signal.find_peaks(
-                x=np.r_[0, successes, 0], height=1, width=1
+                x=np.r_[0, np.roll(successes, -shift), 0], height=1, width=1
             )
-            idx = peaks[np.argmax(properties["widths"])] - 1
+            idx = (peaks[np.argmax(properties["widths"])] - 1 + shift) % num_rotations
             best_ori = R * Rotation.from_euler("z", yaws[idx])
             best_pos = pos
             best_width = widths[idx]
             best_outcome = Label.SUCCESS
+            for j in range(num_rotations):
+                if successes[(idx + j) % num_rotations]:
+                    yaw_ok |= 1 << j
             break  # an approach that works is enough; keep generation cheap
 
-    return Grasp(Transform(best_ori, best_pos), best_width), int(best_outcome)
+    return Grasp(Transform(best_ori, best_pos), best_width), int(best_outcome), yaw_ok
 
 
 if __name__ == "__main__":
@@ -255,6 +272,8 @@ if __name__ == "__main__":
     parser.add_argument("--object-set", type=str, default="blocks")
     parser.add_argument("--num-grasps", type=int, default=10000)
     parser.add_argument("--grasps-per-scene", type=int, default=120)
+    parser.add_argument("--num-rotations", type=int, default=12,
+                        help="yaws tried per approach, spread over [0, pi)")
     parser.add_argument("--num-proc", type=int, default=1)
     parser.add_argument("--save-scene", action="store_true")
     parser.add_argument("--random", action="store_true", help="Add distrubation to camera pose")
