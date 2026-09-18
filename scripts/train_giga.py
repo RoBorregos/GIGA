@@ -14,6 +14,7 @@ import torch.nn.functional as F
 
 #from vgn.dataset_pc import DatasetPCOcc
 from vgn.dataset_voxel import DatasetVoxelOccFile
+from vgn.io import apply_label_mode
 from vgn.networks import get_network, load_network
 from vgn.utils.misc import set_random_seed
 
@@ -48,7 +49,8 @@ def main(args):
     # create data loaders
     train_loader, val_loader = create_train_val_loaders(
         args.dataset, args.dataset_raw, args.batch_size, args.val_split, args.augment, kwargs,
-        split=args.split, seed=args.seed)
+        split=args.split, seed=args.seed,
+        label_mode=(args.label, args.robust_th, args.fragile))
 
     # Weight positives in the quality loss. "auto" = negatives/positives of the
     # training rows, for data that was cropped but not balanced.
@@ -162,11 +164,12 @@ def main(args):
 
 
 def create_train_val_loaders(root, root_raw, batch_size, val_split, augment, kwargs,
-                             split="scene", seed=None):
+                             split="scene", seed=None, label_mode=("success", 0.75, "negative")):
     # augment is deliberately NOT forwarded: apply_transform works in voxel
     # units (z offset 6..34, centre 20) but this dataset stores positions in
     # meters, so enabling it would corrupt the grasp targets.
     dataset = DatasetVoxelOccFile(root, root_raw)
+    dataset.df = apply_label_mode(dataset.df, *label_mode)
     rng = np.random.default_rng(seed)
     if split == "scene":
         # Every scene holds ~120 grasps on the same TSDF. Splitting rows lets
@@ -324,6 +327,12 @@ if __name__ == "__main__":
     parser.add_argument("--silence", action="store_true")
     parser.add_argument("--load-path", type=str, default='')
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--label", choices=["success", "robust"], default="success",
+                        help="positive = worked once, or = still works under pose noise (needs 'robust' column)")
+    parser.add_argument("--robust-th", type=float, default=0.75,
+                        help="with --label robust: success fraction under noise to count as positive")
+    parser.add_argument("--fragile", choices=["negative", "drop"], default="negative",
+                        help="with --label robust: what to do with successes below --robust-th")
     parser.add_argument("--patience", type=int, default=3,
                         help="stop after this many epochs without val improvement (0 = off)")
     parser.add_argument("--lr-plateau", type=int, default=1,
