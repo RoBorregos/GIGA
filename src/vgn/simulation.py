@@ -4,7 +4,7 @@ import time
 import numpy as np
 import pybullet
 
-from vgn.grasp import Label
+from vgn.grasp import Grasp, Label
 from vgn.perception import *
 from vgn.utils import btsim, workspace_lines
 from vgn.utils.transform import Rotation, Transform
@@ -435,3 +435,29 @@ class Gripper(object):
         """Current opening width in meters (not the joint positions)."""
         closed_by = self.joint1.get_position() + self.joint2.get_position()
         return self.max_opening_width - closed_by
+
+
+# Execution error the robust labels are meant to tolerate: about half a TSDF
+# voxel (11.25mm at the 0.45m workspace), which is how far the detector can
+# snap a grasp, plus a few degrees of arm/calibration error.
+ROBUST_NOISE_POS = 0.005
+ROBUST_NOISE_DEG = 5.0
+
+
+def grasp_robustness(sim, ori, pos, trials, rng, noise_pos=ROBUST_NOISE_POS, noise_deg=ROBUST_NOISE_DEG):
+    """Fraction of `trials` executions that succeed under small pose noise.
+
+    Each trial restores the saved scene, jitters the position (gaussian,
+    noise_pos metres per axis) and the orientation (random axis, gaussian
+    angle of noise_deg degrees), and executes without removing the object.
+    """
+    ok = 0
+    for _ in range(trials):
+        axis = rng.normal(size=3)
+        axis /= np.linalg.norm(axis)
+        r = ori * Rotation.from_rotvec(axis * np.radians(rng.normal(0.0, noise_deg)))
+        p = pos + rng.normal(0.0, noise_pos, 3)
+        sim.restore_state()
+        outcome, _ = sim.execute_grasp(Grasp(Transform(r, p), sim.gripper.max_opening_width), remove=False)
+        ok += outcome == Label.SUCCESS
+    return ok / trials

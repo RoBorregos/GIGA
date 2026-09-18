@@ -38,6 +38,10 @@ SPLIT="${SPLIT:-scene}"               # scene | grasp (validation split)
 POS_WEIGHT="${POS_WEIGHT:-1}"
 SELECT_BY="${SELECT_BY:-loss_qual}"   # loss_qual | accuracy
 TARGET_PRECISION="${TARGET_PRECISION:-0.9}"
+ROBUST_TRIALS="${ROBUST_TRIALS:-4}"   # noisy re-executions per successful yaw when labelling (0 = off)
+ROBUST_TH="${ROBUST_TH:-0.75}"        # success fraction under noise that counts as robust
+LABEL="${LABEL:-success}"             # train on: success (worked once) | robust (needs ROBUST_TRIALS > 0)
+FRAGILE="${FRAGILE:-negative}"        # LABEL=robust: fragile successes -> negative | drop
 PATIENCE="${PATIENCE:-3}"             # early stopping, epochs without val improvement (0 = off)
 RUN_TEST=0
 FORCE_REDO=0
@@ -57,7 +61,8 @@ Usage: $(basename "$0") [--run-test] [--force] [--run-name NAME]
 
 Tune via env vars: NUM_PROC, NUM_GRASPS_TRAIN, NUM_GRASPS_TEST, EPOCHS,
 BATCH_SIZE, LR, VAL_SPLIT, GRASPS_PER_SCENE, NUM_ROTATIONS, BALANCE_TRAIN,
-SEED, SPLIT, POS_WEIGHT, SELECT_BY, TARGET_PRECISION, PATIENCE, GIGA_DATA_ROOT.
+SEED, SPLIT, POS_WEIGHT, SELECT_BY, TARGET_PRECISION, PATIENCE, ROBUST_TRIALS,
+ROBUST_TH, LABEL, FRAGILE, GIGA_DATA_ROOT.
 EOF
 }
 
@@ -102,6 +107,7 @@ CONFIG_LOG="$LOG_DIR/config.txt"
   echo "epochs=$EPOCHS batch_size=$BATCH_SIZE lr=$LR val_split=$VAL_SPLIT"
   echo "grasps_per_scene=$GRASPS_PER_SCENE num_rotations=$NUM_ROTATIONS balance_train=$BALANCE_TRAIN"
   echo "seed=$SEED split=$SPLIT pos_weight=$POS_WEIGHT select_by=$SELECT_BY target_precision=$TARGET_PRECISION patience=$PATIENCE"
+  echo "robust_trials=$ROBUST_TRIALS robust_th=$ROBUST_TH label=$LABEL fragile=$FRAGILE"
   echo "run_test=$RUN_TEST force=$FORCE_REDO"
 } | tee "$CONFIG_LOG"
 
@@ -146,13 +152,15 @@ step "01_generate_train" \
   python3 scripts/generate_data_parallel.py "$RAW_TRAIN" \
     --scene packed --object-set frida/train \
     --num-grasps "$NUM_GRASPS_TRAIN" --num-proc "$NUM_PROC" --save-scene \
-    --grasps-per-scene "$GRASPS_PER_SCENE" --num-rotations "$NUM_ROTATIONS"
+    --grasps-per-scene "$GRASPS_PER_SCENE" --num-rotations "$NUM_ROTATIONS" \
+    --robust-trials "$ROBUST_TRIALS" --robust-th "$ROBUST_TH"
 
 step "02_generate_test" \
   python3 scripts/generate_data_parallel.py "$RAW_TEST" \
     --scene packed --object-set frida/test \
     --num-grasps "$NUM_GRASPS_TEST" --num-proc "$NUM_PROC" --save-scene \
-    --grasps-per-scene "$GRASPS_PER_SCENE" --num-rotations "$NUM_ROTATIONS"
+    --grasps-per-scene "$GRASPS_PER_SCENE" --num-rotations "$NUM_ROTATIONS" \
+    --robust-trials "$ROBUST_TRIALS" --robust-th "$ROBUST_TH"
 
 BALANCE_FLAG=()
 [[ "$BALANCE_TRAIN" -eq 1 ]] || BALANCE_FLAG=(--no-balance)
@@ -176,12 +184,14 @@ step "05_occ_train" \
 step "05_occ_test" \
   python3 scripts/save_occ_data_parallel.py "$RAW_TEST" 100000 4 --num-proc "$NUM_PROC"
 
-step "06_train" \
+# marker per run name: a second run on the same data (other LABEL, ...) trains again
+step "06_train_${RUN_NAME}" \
   python3 scripts/train_giga.py --net giga \
     --dataset "$PROC_TRAIN" --dataset_raw "$RAW_TRAIN" \
     --logdir "$LOGDIR_TRAIN" \
     --epochs "$EPOCHS" --batch-size "$BATCH_SIZE" --lr "$LR" --val-split "$VAL_SPLIT" \
-    --seed "$SEED" --split "$SPLIT" --pos-weight "$POS_WEIGHT" --select-by "$SELECT_BY" --patience "$PATIENCE"
+    --seed "$SEED" --split "$SPLIT" --pos-weight "$POS_WEIGHT" --select-by "$SELECT_BY" --patience "$PATIENCE" \
+    --label "$LABEL" --robust-th "$ROBUST_TH" --fragile "$FRAGILE"
 
 # train_giga.py saves into a timestamped subfolder of --logdir, so search
 # for the newest best_vgn_*.pt instead of globbing the folder directly.
@@ -194,14 +204,21 @@ echo "last_checkpoint=$LAST_CKPT" | tee -a "$CONFIG_LOG"
 
 # Offline scoring on the unbalanced test split: seconds, no physics. Both
 # checkpoints, since the validation pick is not always the better one.
+# Scored against both ground truths when the data has robustness: "success"
+# (worked once) and "robust" (still works under pose noise, what the robot
+# needs).
+EVAL_LABELS=(success)
+[[ "$ROBUST_TRIALS" -gt 0 ]] && EVAL_LABELS+=(robust)
 for pair in "best:$BEST_CKPT" "last:$LAST_CKPT"; do
   tag="${pair%%:*}"; ckpt="${pair#*:}"
   [[ -n "$ckpt" ]] || continue
-  rm -f "$DATA_ROOT/.done_06_eval_offline_${RUN_NAME}_$tag"
-  step "06_eval_offline_${RUN_NAME}_$tag" \
-    python3 scripts/eval_offline.py --model "$ckpt" \
-      --dataset "$PROC_TEST" --dataset_raw "$RAW_TEST" \
-      --target-precision "$TARGET_PRECISION" --out "$EVAL_DIR/offline_$tag.json"
+  for gt in "${EVAL_LABELS[@]}"; do
+    rm -f "$DATA_ROOT/.done_06_eval_offline_${RUN_NAME}_${tag}_$gt"
+    step "06_eval_offline_${RUN_NAME}_${tag}_$gt" \
+      python3 scripts/eval_offline.py --model "$ckpt" \
+        --dataset "$PROC_TEST" --dataset_raw "$RAW_TEST" --label "$gt" --robust-th "$ROBUST_TH" \
+        --target-precision "$TARGET_PRECISION" --out "$EVAL_DIR/offline_${tag}_$gt.json"
+  done
 done
 
 if [[ "$RUN_TEST" -eq 1 ]]; then

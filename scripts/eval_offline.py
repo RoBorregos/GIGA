@@ -44,7 +44,7 @@ import numpy as np
 import torch
 
 from vgn.dataset_voxel import yaw_mask
-from vgn.io import read_df, read_setup, read_voxel_grid, valid_rotations
+from vgn.io import apply_label_mode, read_df, read_setup, read_voxel_grid, valid_rotations
 from vgn.networks import load_network
 from vgn.utils.transform import Rotation
 
@@ -177,7 +177,9 @@ def predict(net, df, dataset_root, size, device):
 
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    df = read_df(args.dataset_raw).reset_index(drop=True)
+    # evaluation always counts fragile successes as failures in robust mode:
+    # the question is whether the robot's grasp holds, not how it trained
+    df = apply_label_mode(read_df(args.dataset_raw).reset_index(drop=True), args.label, args.robust_th)
     size, _, _, _ = read_setup(args.dataset_raw)
     net = load_network(args.model, device, args.type)
     net.eval()
@@ -190,6 +192,7 @@ def main(args):
 
     res = {
         "model": str(args.model),
+        "label": args.label if args.label == "success" else f"robust>={args.robust_th}",
         "rows": int(len(df)),
         "scenes": int(df["scene_id"].nunique()),
         "positive_rate": float(labels.mean()),
@@ -268,5 +271,8 @@ if __name__ == "__main__":
     parser.add_argument("--qual-th", type=float, default=0.9, help="the threshold sim_grasp_multiple.py uses")
     parser.add_argument("--target-precision", type=float, default=0.9,
                         help="precision the operating threshold has to reach")
+    parser.add_argument("--label", choices=["success", "robust"], default="success",
+                        help="ground truth: worked once, or still works under pose noise")
+    parser.add_argument("--robust-th", type=float, default=0.75)
     parser.add_argument("--out", type=Path, default=None)
     main(parser.parse_args())

@@ -53,19 +53,21 @@ def read_full_sensor_data(root, scene_id):
     return data["depth_imgs"], data["extrinsics"]
 
 
-def write_grasp(root, scene_id, grasp, label, yaw_step_deg=0.0, yaw_ok=0):
+def write_grasp(root, scene_id, grasp, label, yaw_step_deg=0.0, yaw_ok=0,
+                robust=float("nan"), robust_ok=0):
     # TODO concurrent writes could be an issue
     csv_path = root / "grasps.csv"
     if not csv_path.exists():
         create_csv(
             csv_path,
             ["scene_id", "qx", "qy", "qz", "qw", "x", "y", "z", "width", "label",
-             "yaw_step_deg", "yaw_ok"],
+             "yaw_step_deg", "yaw_ok", "robust", "robust_ok"],
         )
     qx, qy, qz, qw = grasp.pose.rotation.as_quat()
     x, y, z = grasp.pose.translation
     width = grasp.width
-    append_csv(csv_path, scene_id, qx, qy, qz, qw, x, y, z, width, label, yaw_step_deg, yaw_ok)
+    append_csv(csv_path, scene_id, qx, qy, qz, qw, x, y, z, width, label, yaw_step_deg, yaw_ok,
+               robust, robust_ok)
 
 
 MAX_VALID_ROTATIONS = 48  # 2 (gripper symmetry) x up to 24 yaws
@@ -158,3 +160,31 @@ def append_csv(path, *args):
     with path.open("a") as f:
         f.write(row)
         f.write("\n")
+
+
+def apply_label_mode(df, mode="success", robust_th=0.75, fragile="negative"):
+    """Return df with `label` (and rotation targets) set for a label mode.
+
+    success   label as generated: the grasp worked once. Unchanged df.
+    robust    positive only if the stored grasp also succeeds under pose
+              noise at least robust_th of the time (column `robust`).
+              Successes below that are "fragile": relabelled 0 with
+              fragile="negative" (teaches the net to avoid them) or removed
+              with fragile="drop" (neither rewarded nor punished). Rotation
+              targets become the robust yaws (robust_ok) where recorded.
+    """
+    if mode == "success":
+        return df
+    if "robust" not in df.columns or not df.loc[df.label == 1, "robust"].notna().any():
+        raise ValueError("robust labels requested but the data has no 'robust' column; "
+                         "generate with --robust-trials or run scripts/relabel_robust.py")
+    df = df.copy()
+    fragile_rows = (df.label == 1) & ~(df.robust >= robust_th)
+    if fragile == "drop":
+        df = df[~fragile_rows].reset_index(drop=True)
+    else:
+        df.loc[fragile_rows, "label"] = 0
+    if "robust_ok" in df.columns and "yaw_ok" in df.columns:
+        use = (df.label == 1) & (df.robust_ok > 0)
+        df.loc[use, "yaw_ok"] = df.loc[use, "robust_ok"]
+    return df
