@@ -1,3 +1,12 @@
+# One OpenMP thread. Open3D and PyBullet start their own OpenMP pools, and
+# with more than one thread torch's first parallel op in the network forward
+# segfaulted on the CPU image (same conflict generate_data_parallel.py works
+# around). Must run before numpy/torch are imported.
+import os
+
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ[_v] = "1"
+
 import argparse
 import numpy as np
 import json
