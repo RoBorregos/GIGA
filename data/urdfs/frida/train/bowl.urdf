@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<robot name="bowl">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.000502 0.004731 0.051882" rpy="0 0 0" />
+      <mass value="1.259197" />
+      <inertia ixx="0.00216278" ixy="-0.00000542" ixz="-0.00000830"
+               iyy="0.00219576" iyz="0.00002376" izz="0.00307308" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="bowl.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="bowl_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+    <!-- PyBullet reads this URDF extension directly (setup/plane.urdf already
+         does). Without it every object falls back to PyBullet's default 0.5,
+         and since Bullet MULTIPLIES the two bodies' coefficients that left an
+         effective mu of 0.25 against the fingers, which is why the grip
+         force had to be pushed to 50N to hold anything. -->
+    <contact>
+      <lateral_friction value="1.0"/>
+    </contact>
+  </link>
+</robot>

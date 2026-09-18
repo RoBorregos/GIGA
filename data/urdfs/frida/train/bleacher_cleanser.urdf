@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<robot name="bleacher_cleanser">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.013586 0.002470 0.106013" rpy="0 0 0" />
+      <mass value="1.135855" />
+      <inertia ixx="0.00514824" ixy="0.00016102" ixz="0.00008228"
+               iyy="0.00498892" iyz="-0.00025396" izz="0.00100596" />
+    </inertial>
+    <visual>
+      <geometry><mesh filename="bleacher_cleanser.stl" scale="1.0 1.0 1.0" /></geometry>
+    </visual>
+    <collision>
+      <geometry><mesh filename="bleacher_cleanser_col.obj" scale="1.0 1.0 1.0" /></geometry>
+    </collision>
+    <!-- PyBullet reads this URDF extension directly (setup/plane.urdf already
+         does). Without it every object falls back to PyBullet's default 0.5,
+         and since Bullet MULTIPLIES the two bodies' coefficients that left an
+         effective mu of 0.25 against the fingers, which is why the grip
+         force had to be pushed to 50N to hold anything. -->
+    <contact>
+      <lateral_friction value="1.0"/>
+    </contact>
+  </link>
+</robot>
