@@ -31,12 +31,20 @@ def main(args):
         df.drop(df[df[axis] > hi].index, inplace=True)
     # write_df(df, root)
 
-    # balance
-    # df = read_df(root)
+    print("After crop to [%.2f, %.2f]:" % (lo, hi), len(df.index), "samples")
+
+    # balance -- skip it for evaluation data (keep the real positive rate) or
+    # when training with a positive-class weight instead of dropping negatives.
     positives = df[df["label"] == 1]
     negatives = df[df["label"] == 0]
-    i = np.random.choice(negatives.index, len(negatives.index) - len(positives.index), replace=False)
-    df = df.drop(i)
+    if args.no_balance:
+        print("Not balancing (--no-balance)")
+    elif len(negatives.index) >= len(positives.index):
+        rng = np.random.default_rng(args.seed)
+        i = rng.choice(negatives.index, len(negatives.index) - len(positives.index), replace=False)
+        df = df.drop(i)
+    else:
+        print("More positives than negatives, not balancing")
     write_df(df, root)
 
     # remove unreferenced scenes.
@@ -60,5 +68,9 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("root", type=Path)
+    parser.add_argument("--no-balance", action="store_true",
+                        help="only crop; keep every negative (use for test data)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="seed for choosing which negatives to drop")
     args = parser.parse_args()
     main(args)
